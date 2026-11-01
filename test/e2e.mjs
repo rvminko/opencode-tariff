@@ -4,7 +4,8 @@
 // Usage: node test/e2e.mjs [scenarioNumber]. Requires Docker (container: tariff-e2e).
 
 import { spawnSync } from "node:child_process"
-import { homedir } from "node:os"
+import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs"
+import { homedir, tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 
@@ -14,6 +15,13 @@ const W = "/tmp/work"
 // Repository root (this file lives in <repo>/test/).
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "..")
 const REPO_MOUNT = "/root/.config/opencode/plugins/tariff"
+// OpenCode config directory mounted into the container. Defaults to the developer's
+// home; CI sets TARIFF_CONFIG_DIR to a throwaway dir with a minimal opencode.json
+// so tests never depend on local credentials.
+const CONFIG_DIR = process.env.TARIFF_CONFIG_DIR ?? join(homedir(), ".config/opencode")
+// The container gets its own writable copy: OpenCode writes service.json into the
+// config directory at boot, and the developer's real directory must not be touched.
+const RUNTIME_CONFIG = join(tmpdir(), "tariff-e2e-config")
 // OpenTUI highlight in capture-pane: 256-palette 216 (full-color builds: 48;2;250;178;131).
 const CURSOR_BG = [/48;5;216m/, /48;2;250;178;131m/]
 
@@ -55,9 +63,27 @@ function inspect(fmt) {
   return r.status === 0 ? (r.stdout ?? "").trim() : ""
 }
 
+function prepareRuntimeConfig() {
+  mkdirSync(join(RUNTIME_CONFIG, "plugins", "tariff"), { recursive: true })
+  for (const name of ["opencode.json", "opencode.jsonc"]) rmSync(join(RUNTIME_CONFIG, name), { force: true })
+  let copied = false
+  for (const name of ["opencode.json", "opencode.jsonc"]) {
+    const from = join(CONFIG_DIR, name)
+    if (existsSync(from)) {
+      cpSync(from, join(RUNTIME_CONFIG, name))
+      copied = true
+    }
+  }
+  if (!copied) writeFileSync(join(RUNTIME_CONFIG, "opencode.json"), '{"model":"ollama-cloud/glm-5.3-flash"}\n')
+}
+
 function ensureContainer() {
+  // Refresh the config copy every run: the container mounts this path, so updated
+  // files are visible immediately, and local runs keep using the real config.
+  prepareRuntimeConfig()
   const running = inspect("{{.State.Running}}") === "true"
-  const mounted = inspect("{{json .Mounts}}").includes(REPO_MOUNT)
+  const mounts = inspect("{{json .Mounts}}")
+  const mounted = mounts.includes(REPO_MOUNT) && mounts.includes(RUNTIME_CONFIG)
   if (running && mounted) return
   spawnSync("docker", ["rm", "-f", CONTAINER], { encoding: "utf8" })
   const arch = process.arch === "arm64" ? "arm64" : "x64"
@@ -69,7 +95,7 @@ function ensureContainer() {
       "--name",
       CONTAINER,
       "-v",
-      `${join(homedir(), ".config/opencode")}:/root/.config/opencode:ro`,
+      `${RUNTIME_CONFIG}:/root/.config/opencode`,
       "-v",
       `${REPO}:${REPO_MOUNT}:ro`,
       "node:22-bookworm-slim",

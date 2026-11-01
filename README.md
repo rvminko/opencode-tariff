@@ -1,6 +1,7 @@
 # opencode-tariff
 
 [![License: MIT](https://img.shields.io/github/license/rvminko/opencode-tariff)](LICENSE)
+[![e2e](https://github.com/rvminko/opencode-tariff/actions/workflows/e2e.yml/badge.svg)](https://github.com/rvminko/opencode-tariff/actions/workflows/e2e.yml)
 ![OpenCode v2](https://img.shields.io/badge/opencode-v2-blue)
 
 Cost-aware model picker and subscription usage meters for [OpenCode](https://opencode.ai) v2.
@@ -106,6 +107,8 @@ node test/e2e.mjs 2        # one scenario
 The e2e harness drives a real TUI in a disposable Docker container
 (`tariff-e2e`, opencode linux binary + tmux) with `capture-pane -e` snapshots: keyboard, mouse,
 toggle re-open, catalog/meter unit tests, and usage rendering with injected data.
+It mounts `~/.config/opencode` into the container; CI sets `TARIFF_CONFIG_DIR` to a
+throwaway directory with a minimal `opencode.json` so tests never touch local credentials.
 
 Debug hooks (environment variables, used by the tests):
 
