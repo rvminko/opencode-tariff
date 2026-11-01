@@ -121,7 +121,6 @@ tui.tsx     TUI part: /tariff dialog, footer headline, sidebar usage block
 rpc.ts      RPC contract (JSON schemas)
 catalog.ts  price catalog, schedules, per-provider availability helpers
 usage.ts    meters: Go/Console + Ollama balance + per-row limit math
-SPEC-usage-bars.md  design spec and implementation notes for the usage meters
 test/e2e.mjs        Docker-driven end-to-end tests
 ```
 
