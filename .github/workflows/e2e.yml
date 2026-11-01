@@ -23,7 +23,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/oc-config"
           printf '{"model":"ollama-cloud/glm-5.3-flash"}\n' > "$RUNNER_TEMP/oc-config/opencode.json"
 
-      - name: Run e2e (docker: opencode 2.2.5 + tmux)
+      - name: "Run e2e (docker: opencode 2.2.5 + tmux)"
         env:
           TARIFF_CONFIG_DIR: ${{ runner.temp }}/oc-config
         run: node test/e2e.mjs
