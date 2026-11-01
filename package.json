@@ -1,0 +1,33 @@
+{
+  "name": "opencode-tariff",
+  "version": "0.1.0",
+  "description": "Cost-aware model picker and subscription usage meters for OpenCode v2 (Ollama Cloud, OpenCode Go, Z.AI)",
+  "type": "module",
+  "files": [
+    "LICENSE",
+    "index.ts",
+    "tui.tsx",
+    "rpc.ts",
+    "catalog.ts",
+    "usage.ts",
+    "SPEC-usage-bars.md"
+  ],
+  "exports": {
+    ".": "./index.ts",
+    "./server": "./index.ts",
+    "./tui": "./tui.tsx",
+    "./rpc": "./rpc.ts"
+  },
+  "scripts": {
+    "test": "node test/e2e.mjs"
+  },
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "ollama",
+    "opencode-go",
+    "zai",
+    "pricing",
+    "llm"
+  ]
+}
