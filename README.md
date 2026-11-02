@@ -1,6 +1,6 @@
 # opencode-tariff
 
-[![License: MIT](https://img.shields.io/github/license/rvminko/opencode-tariff)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![e2e](https://github.com/rvminko/opencode-tariff/actions/workflows/e2e.yml/badge.svg)](https://github.com/rvminko/opencode-tariff/actions/workflows/e2e.yml)
 ![OpenCode v2](https://img.shields.io/badge/opencode-v2-blue)
 
