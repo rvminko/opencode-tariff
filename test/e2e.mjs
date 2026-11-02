@@ -107,7 +107,7 @@ function ensureContainer() {
   if (run.status !== 0) throw new Error(`docker run failed: ${run.stderr}`)
   console.log("container created (first run installs opencode + tmux, may take a minute)")
   const setup = execScript(
-    `apt-get update -qq >/dev/null 2>&1 && apt-get install -y -qq tmux curl >/dev/null 2>&1 && ` +
+    `apt-get update -qq >/dev/null 2>&1 && apt-get install -y -qq tmux curl procps >/dev/null 2>&1 && ` +
       `curl -fsSL "https://github.com/anomalyco/opencode/releases/download/v2.2.5/opencode-linux-${arch}.tar.gz" -o /tmp/oc.tgz && ` +
       `cd /tmp && tar xzf oc.tgz && mv -f /tmp/opencode /usr/local/bin/opencode && chmod +x /usr/local/bin/opencode && ` +
       `mkdir -p /tmp/work && echo SETUP-OK`,
@@ -119,17 +119,22 @@ function ensureContainer() {
 // ── scenario bodies (inside one exec each) ───────────────────────────────────
 
 // Boots the TUI and opens /tariff, tolerating slow CI runners: waits for the
-// composer, then retries the command if the dialog did not appear.
+// composer, then retries the command if the dialog did not appear. Leftover
+// opencode processes and stale snapshots from earlier scenarios are cleared
+// first — a dead server must not be masked by an old capture.
 const bootAndOpen = (env = "") => `
 cd /tmp/work || exit 9
 tmux kill-server 2>/dev/null
-tmux new-session -d -s T -x 110 -y 32 "TERM=xterm-256color ${env} opencode"
-for i in $(seq 1 90); do tmux capture-pane -p -t T 2>/dev/null | grep -q "Ask anything" && break; sleep 1; done
+pkill -x opencode 2>/dev/null
 sleep 1
-for attempt in 1 2 3; do
+rm -f ${W}/a.txt ${W}/b.txt ${W}/m.txt ${W}/t.txt ${W}/u.txt ${W}/o.txt
+tmux new-session -d -s T -x 110 -y 32 "TERM=xterm-256color ${env} opencode"
+for i in $(seq 1 120); do tmux capture-pane -p -t T 2>/dev/null | grep -q "Ask anything" && break; sleep 1; done
+sleep 1
+for attempt in 1 2 3 4 5; do
   tmux send-keys -t T -l "/tariff"
   tmux send-keys -t T Enter
-  for i in $(seq 1 30); do tmux capture-pane -p -t T 2>/dev/null | grep -q "Тариф" && break 2; sleep 0.5; done
+  for i in $(seq 1 40); do tmux capture-pane -p -t T 2>/dev/null | grep -q "Тариф" && break 2; sleep 0.5; done
   tmux send-keys -t T Escape
   sleep 0.5
 done
@@ -183,17 +188,21 @@ function findLineIndex(buf, needle) {
 // S2: mouse click moves the highlight (native select wires mouse to move/select).
 function s2_mouse() {
   runOpen()
-  const firstIdx = findLineIndex(parseLines(readSnapshot("a.txt")), "/1M")
+  const capA = readSnapshot("a.txt")
+  const firstIdx = findLineIndex(parseLines(capA), "/1M")
+  check("S2: dialog open before the click", firstIdx >= 0, capA.slice(0, 240))
+  if (firstIdx < 0) return
   const screenRow = firstIdx + 1 + 2 // capture line (1-based) = tmux pane row
   execScript(
     `tmux send-keys -l -t T "$(printf '\\033[<0;30;${screenRow}M')" && sleep 0.2
      tmux send-keys -l -t T "$(printf '\\033[<0;30;${screenRow}m')" && sleep 1.2
      tmux capture-pane -e -p > ${W}/m.txt`,
   )
-  const bufM = parseLines(readSnapshot("m.txt"))
+  const capM = readSnapshot("m.txt")
+  const bufM = parseLines(capM)
   // Native select submits on click (onMouseUp → submit); no-auth rows resolve too.
-  const submitted = !bufM.some((l) => l.includes("Search"))
-  check("S2: click submitted the picked row (composer back)", submitted, { opened: bufM.some((l) => l.includes("Тариф")) })
+  const submitted = bufM.length > 0 && !bufM.some((l) => l.includes("Search"))
+  check("S2: click submitted the picked row (composer back)", submitted, capM.slice(0, 240))
   execScript("tmux send-keys -t T Escape; true", 15000)
 }
 
@@ -294,13 +303,13 @@ function s7_usage_present() {
     },
   })
   execScript(`mkdir -p ${W} && printf '%s' '${fake}' > ${W}/fake-usage.json`)
-  execScript(bootAndOpen(`TARIFF_FAKE_USAGE=@${W}/fake-usage.json`) + `tmux capture-pane -e -p > ${W}/u.txt`)
+  const run = execScript(bootAndOpen(`TARIFF_FAKE_USAGE=@${W}/fake-usage.json`) + `tmux capture-pane -e -p > ${W}/u.txt`)
   const text = readSnapshot("u.txt")
   const buf = parseLines(text).map((l) => l.replace(/\x1b\[[0-9;]*m/g, "").replace(/\s+/g, " "))
   const title = buf.find((l) => l.includes("Тариф")) ?? ""
   const footer = buf.find((l) => /68%/.test(l) && /[█░]{5}/.test(l)) ?? ""
-  check("S7: dialog title shows meters", /5ч [█░]{5} 68% · нед 12% · мес 3%/.test(title), title)
-  check("S7: footer shows worst meter", /5ч [█░]{5} 68%/.test(footer), footer)
+  check("S7: dialog title shows meters", /5ч [█░]{5} 68% · нед 12% · мес 3%/.test(title), title || run.out.slice(0, 300))
+  check("S7: footer shows worst meter", /5ч [█░]{5} 68%/.test(footer), footer || buf.slice(0, 5))
   execScript("tmux send-keys -t T Escape; sleep 0.5; tmux kill-server 2>/dev/null; true", 20000)
 }
 
