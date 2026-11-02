@@ -118,19 +118,27 @@ function ensureContainer() {
 
 // ── scenario bodies (inside one exec each) ───────────────────────────────────
 
-const OPEN_SCRIPT = `
+// Boots the TUI and opens /tariff, tolerating slow CI runners: waits for the
+// composer, then retries the command if the dialog did not appear.
+const bootAndOpen = (env = "") => `
 cd /tmp/work || exit 9
 tmux kill-server 2>/dev/null
-tmux new-session -d -s T -x 110 -y 32 "TERM=xterm-256color opencode"
-sleep 9
-tmux send-keys -t T -l '/tariff'
-tmux send-keys -t T Enter
-sleep 2.6
-tmux capture-pane -e -p > ${W}/a.txt
+tmux new-session -d -s T -x 110 -y 32 "TERM=xterm-256color ${env} opencode"
+for i in $(seq 1 90); do tmux capture-pane -p -t T 2>/dev/null | grep -q "Ask anything" && break; sleep 1; done
+sleep 1
+for attempt in 1 2 3; do
+  tmux send-keys -t T -l "/tariff"
+  tmux send-keys -t T Enter
+  for i in $(seq 1 30); do tmux capture-pane -p -t T 2>/dev/null | grep -q "Тариф" && break 2; sleep 0.5; done
+  tmux send-keys -t T Escape
+  sleep 0.5
+done
 `
 
+const OPEN_SCRIPT = bootAndOpen()
+
 function runOpen() {
-  const r = execScript(OPEN_SCRIPT)
+  const r = execScript(OPEN_SCRIPT + `tmux capture-pane -e -p > ${W}/a.txt`)
   if (r.code !== 0) console.log(`  [open:code=${r.code}] ${r.err.slice(0, 200)}`)
 }
 
@@ -286,16 +294,7 @@ function s7_usage_present() {
     },
   })
   execScript(`mkdir -p ${W} && printf '%s' '${fake}' > ${W}/fake-usage.json`)
-  execScript(`
-cd /tmp/work || exit 9
-tmux kill-server 2>/dev/null
-tmux new-session -d -s T -x 110 -y 32 "TERM=xterm-256color TARIFF_FAKE_USAGE=@${W}/fake-usage.json opencode"
-sleep 9
-tmux send-keys -t T -l '/tariff'
-tmux send-keys -t T Enter
-sleep 2.8
-tmux capture-pane -e -p > ${W}/u.txt
-`)
+  execScript(bootAndOpen(`TARIFF_FAKE_USAGE=@${W}/fake-usage.json`) + `tmux capture-pane -e -p > ${W}/u.txt`)
   const text = readSnapshot("u.txt")
   const buf = parseLines(text).map((l) => l.replace(/\x1b\[[0-9;]*m/g, "").replace(/\s+/g, " "))
   const title = buf.find((l) => l.includes("Тариф")) ?? ""
@@ -312,16 +311,7 @@ function s8_ollama_present() {
     purchased: { balance_usd: 5 },
   })
   execScript(`mkdir -p ${W} && printf '%s' '${fake}' > ${W}/fake-balance.json`)
-  execScript(`
-cd /tmp/work || exit 9
-tmux kill-server 2>/dev/null
-tmux new-session -d -s T -x 110 -y 32 "TERM=xterm-256color TARIFF_FAKE_BALANCE=@${W}/fake-balance.json opencode"
-sleep 9
-tmux send-keys -t T -l '/tariff'
-tmux send-keys -t T Enter
-sleep 2.8
-tmux capture-pane -e -p > ${W}/o.txt
-`)
+  execScript(bootAndOpen(`TARIFF_FAKE_BALANCE=@${W}/fake-balance.json`) + `tmux capture-pane -e -p > ${W}/o.txt`)
   const buf = parseLines(readSnapshot("o.txt")).map((l) => l.replace(/\x1b\[[0-9;]*m/g, "").replace(/\s+/g, " "))
   const title = buf.find((l) => l.includes("Тариф")) ?? ""
   const footer = buf.find((l) => /68%/.test(l) && /[█░]{5}/.test(l)) ?? ""
