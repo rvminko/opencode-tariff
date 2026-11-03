@@ -12,6 +12,7 @@ const rowSchema = {
     blend: { type: "number" },
     est: { type: "boolean" },
     offPeak: { type: "boolean" },
+    discounted: { type: "boolean" },
     input: { type: "number" },
     cached: { type: "number" },
     output: { type: "number" },

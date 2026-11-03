@@ -15,7 +15,12 @@ export interface Row {
   // Effective price at the given moment, USD per 1M tokens (`est` = converted from credits via usdPerCredit).
   blend: number
   est: boolean
+  // True while the provider is inside its off-peak window — even for models
+  // whose per-token price does not change (no published off-peak rows).
   offPeak: boolean
+  // True only when the row's price is ACTUALLY the off-peak one, i.e. the
+  // provider is off-peak AND has a published off-peak price for this model.
+  discounted: boolean
   // Raw effective multipliers/USD per 1M tokens.
   input: number
   cached: number
@@ -135,12 +140,13 @@ export function rowsFor(now: Date, usdPerCredit: number): Row[] {
       if (!price) continue
       const at = effective(p, price, now)
       const mix = blended(at)
+      const offPeak = !isPeak(p, now)
       if (p === "zai") {
         // Credit multipliers per docs convert to credits per 1M tokens: multiplier * 100.
         const credits = mix * 100
-        out.push({ model, provider: p, blend: credits * usdPerCredit, est: true, offPeak: !isPeak(p, now), input: at.i * 100, cached: at.c * 100, output: at.o * 100 })
+        out.push({ model, provider: p, blend: credits * usdPerCredit, est: true, offPeak, discounted: false, input: at.i * 100, cached: at.c * 100, output: at.o * 100 })
       } else {
-        out.push({ model, provider: p, blend: mix, est: false, offPeak: !isPeak(p, now), input: at.i, cached: at.c, output: at.o })
+        out.push({ model, provider: p, blend: mix, est: false, offPeak, discounted: offPeak && price.off !== undefined, input: at.i, cached: at.c, output: at.o })
       }
     }
   }

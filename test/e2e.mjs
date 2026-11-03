@@ -161,6 +161,18 @@ function s1_arrows(n = 3) {
   check("S1: rows carry limit-usage bars and percent", bufA.some((l) => /[█░]{10} \d+(\.\d+)?%/.test(l)), bufA.filter((l) => /[█░]/.test(l)).slice(0, 2))
   const cursorA = cursorListLines(bufA)
   check("S1: cursor on first row after open", cursorA.includes(firstA), { firstA, cursorA })
+  // DialogSelect renders the description inline after the title; the core resets
+  // the dialog size to "medium" (60), which clips it to one cell unless the
+  // plugin re-applies "xlarge" after dialog.select() has replaced the stack.
+  const rowsA = bufA.filter((l) => l.includes("/1M"))
+  check(
+    "S1: description renders fully",
+    bufA.some((l) => /отн\. (?:[−+]?[0-9]+|—)/.test(l)),
+    rowsA.slice(0, 2).map((l) => l.replace(/\x1b\[[0-9;]*m/g, "")),
+  )
+  // At least one provider is off-peak at any UTC hour (their peak windows
+  // never overlap), so a ↓ marker must always be present in the list.
+  check("S1: off-peak rows carry ↓ in the title", rowsA.some((l) => l.includes("↓")), rowsA.slice(0, 2).map((l) => l.replace(/\x1b\[[0-9;]*m/g, "")))
 
   execScript(`
 tmux send-keys -t T Down && sleep 0.7
@@ -171,6 +183,15 @@ tmux capture-pane -e -p > ${W}/b.txt
   const bufB = parseLines(readSnapshot("b.txt"))
   const cursorB = cursorListLines(bufB)
   check("S1: cursor moved by 3", cursorB.length >= 1 && cursorB[0] - Math.max(firstA, 0) === 3, { firstA, cursorB })
+  // The filter runs fuzzysort over searchText, "off-peak" is searchable there:
+  // query "off" must reduce the list to ↓ rows only.
+  execScript(`tmux send-keys -t T -l "off" && sleep 1.5 && tmux capture-pane -e -p > ${W}/s.txt`)
+  const hits = parseLines(readSnapshot("s.txt")).filter((l) => l.includes("/1M"))
+  check(
+    "S1: query 'off' returns only off-peak rows",
+    hits.length > 0 && hits.every((l) => l.includes("↓")),
+    hits.slice(0, 2).map((l) => l.replace(/\x1b\[[0-9;]*m/g, "")),
+  )
   execScript("tmux send-keys -t T Escape; true", 15000)
 }
 
@@ -236,6 +257,18 @@ async function s4_unit() {
   const mondayPeak = cat.rowsFor(new Date("2026-11-02T13:00:00Z"), 0.0004)
   const dsPeak = mondayPeak.find((r) => r.model === "deepseek-v4.1-flash" && r.provider === "ollama")
   check("S4: monday 13:00 UTC deepseek peak", dsPeak.offPeak === false)
+  // ↓ semantics: discounted = off-peak window AND a published off-peak price.
+  check(
+    "S4: sunday discounted rows are deepseek only",
+    rows.filter((r) => r.discounted).every((r) => r.model.startsWith("deepseek")),
+    rows.filter((r) => r.discounted).map((r) => `${r.model}/${r.provider}`),
+  )
+  check(
+    "S4: sunday deepseek discounted",
+    rows.some((r) => r.model === "deepseek-v4.1-flash" && r.provider === "go" && r.discounted),
+  )
+  check("S4: zai rows never discounted", rows.filter((r) => r.provider === "zai").every((r) => !r.discounted))
+  check("S4: peak row not discounted", dsPeak.discounted === false && dsPeak.offPeak === false)
   check("S4: isProviderAvailable exact/prefix", cat.isProviderAvailable("ollama-cloud", ["opencode", "ollama-cloud", "mtplx"]) && !cat.isProviderAvailable("opencode-go", ["opencode", "ollama-cloud"]))
 }
 

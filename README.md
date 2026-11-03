@@ -27,6 +27,8 @@ cheapest provider of the same model family right before each prompt.
   - Console budgets, when the workspace sets any (single line).
 - Peak/off-peak aware: DeepSeek models are cheaper off-peak on both Ollama and Go (their windows
   differ, so the plugin picks whichever is currently off-peak); Z.AI burns half the credits off-peak.
+  Rows whose shown price is the discounted off-peak one carry `↓` in the title and `off-peak` in
+  the search text — typing `off` in the dialog filter leaves only those rows.
 
 ## Requirements
 

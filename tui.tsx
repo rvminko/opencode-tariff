@@ -323,7 +323,6 @@ export default Plugin.define({
       await refresh()
       void fetchUsage()
       void fetchOllama()
-      context.ui.dialog.set({ size: "xlarge", centered: true })
       const set = providers()
       const s = settings()
       const cur = currentModelOf()
@@ -344,11 +343,13 @@ export default Plugin.define({
         const marker = mineCur ? " " : set.has(row.provider) ? " " : "×"
         const pct = pctOfRow(row)
         return {
-          title: `${marker} ${pad(row.model, 19)} ${pad(money(row.blend, row.est), 9)}/1M`,
+          // ↓ marks rows whose shown price is the discounted off-peak one right
+          // now; it lives in the title so it survives description clipping.
+          title: `${marker} ${pad(row.model, 19)} ${row.discounted ? "↓" : " "}${pad(money(row.blend, row.est), 9)}/1M`,
           value,
           category: set.has(row.provider) ? NAMES[row.provider] : `${NAMES[row.provider]} (нет auth)`,
-          description: `отн. ${delta}${row.offPeak ? " · off-peak" : ""}`.trim(),
-          searchText: `${row.model} ${NAMES[row.provider]} ${delta}`,
+          description: `отн. ${delta}${row.discounted ? " · off-peak" : ""}`.trim(),
+          searchText: `${row.model} ${NAMES[row.provider]} ${delta}${row.discounted ? " off-peak" : ""}`,
           footer: `${costBar(pct, maxPct)} ${costText(pct)}`,
           detail:
             typeof row.est === "boolean" && row.est
@@ -358,7 +359,10 @@ export default Plugin.define({
       })
 
       const byValue = new Map(options.map((o) => [o.value, o]))
-      const value = await context.ui.dialog.select({
+      // dialog.select() opens through Dialog.replace, which resets the stack
+      // size to "medium" (60 columns); set() before the call is discarded, so
+      // re-apply the presentation options once the dialog has replaced.
+      const pending = context.ui.dialog.select({
         title: ["Тариф", s.type === "cheap" ? "cheap" : "все", meters].filter(Boolean).join(" · "),
         options,
         current: curProvider !== undefined && curFamily ? `${curProvider}/${curFamily}` : undefined,
@@ -410,6 +414,8 @@ export default Plugin.define({
           },
         ],
       })
+      context.ui.dialog.set({ size: "xlarge", centered: true })
+      const value = await pending
       if (!value) {
         await refresh()
         return
