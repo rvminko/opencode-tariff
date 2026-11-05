@@ -408,7 +408,42 @@ function s8_ollama_present() {
   execScript("tmux send-keys -t T Escape; sleep 0.5; tmux kill-server 2>/dev/null; true", 20000)
 }
 
-const scenarios = [s1_arrows, s2_mouse, s3_toggles, s4_unit, s5_usage_unit, s6_usage_live_absent, s7_usage_present, s8_ollama_present]
+// S9: picking a row must resolve back to its catalog row. Regression: the
+// submit handler looked up the option object and read .provider off it, which
+// is undefined there — every pick showed "нет авторизации у undefined" and the
+// model never switched. With no auth in CI the pick shows the same warning
+// toast, but it must name the row's provider, never "undefined".
+function s9_pick_resolves_row() {
+  runOpen()
+  const pre = parseLines(readSnapshot("a.txt"))
+  check("S9: dialog opened", pre.some((l) => l.includes("Тариф")), pre.slice(0, 4))
+  if (!pre.some((l) => l.includes("Тариф"))) {
+    execScript("tmux kill-server 2>/dev/null; true", 20000)
+    return
+  }
+  execScript(`
+sleep 1
+tmux send-keys -t T Enter
+for i in $(seq 1 16); do
+  tmux capture-pane -p -t T 2>/dev/null | grep -qE "нет авторизации|· сессия|внутри" && break
+  sleep 0.5
+done
+tmux capture-pane -p -t T > ${W}/p.txt
+`)
+  const buf = parseLines(readSnapshot("p.txt")).map((l) => l.replace(/\x1b\[[0-9;]*m/g, ""))
+  // Without credentials the pick shows the no-auth warning for the row's own
+  // provider; with credentials it shows the switch toast. Either way the
+  // resolved row must be named — never "undefined".
+  check(
+    "S9: pick names the provider, not undefined",
+    !buf.some((l) => l.includes("нет авторизации у undefined")) &&
+      buf.some((l) => l.includes("нет авторизации у") || /· сессия|внутри/.test(l)),
+    buf.filter((l) => /Tariff|авториз|сессия/.test(l)).slice(0, 3),
+  )
+  execScript("tmux send-keys -t T Escape; sleep 0.5; tmux kill-server 2>/dev/null; true", 20000)
+}
+
+const scenarios = [s1_arrows, s2_mouse, s3_toggles, s4_unit, s5_usage_unit, s6_usage_live_absent, s7_usage_present, s8_ollama_present, s9_pick_resolves_row]
 const only = process.argv[2] ? Number(process.argv[2]) - 1 : undefined
 ensureContainer()
 for (let i = 0; i < scenarios.length; i++) {

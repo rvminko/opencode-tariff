@@ -43,14 +43,13 @@ const money = (v: number, est: boolean) => `${est ? "~" : ""}$${v.toFixed(3)}`
 const pad = (s: string, n: number): string => (s.length >= n ? s : s + " ".repeat(n - s.length))
 const cycle = <T extends string>(v: T, all: T[], dir = 1): T => all[(all.indexOf(v) + dir + all.length) % all.length]
 
-// Current session fallback: the most recently updated root session.
-const lastSessionOf = (context: ReturnType<typeof usePlugin>): string | undefined => {
-  const sessions = ((context.data.session.list() ?? []) as unknown[]).filter(
-    (s): s is { id?: string; parentID?: string; time?: { updated?: number } } => typeof s === "object" && s !== null,
-  )
-  const roots = sessions.filter((s) => !s.parentID && s.id)
-  roots.sort((a, b) => (b.time?.updated ?? 0) - (a.time?.updated ?? 0))
-  return roots[0]?.id
+// Current session: the router knows the session being viewed; on the home
+// screen there is none and the pick becomes the new-session default.
+const currentSessionOf = (context: ReturnType<typeof usePlugin>): string | undefined => {
+  const route = context.ui.router.current() as unknown
+  if (!route || typeof route !== "object") return undefined
+  const r = route as { type?: string; sessionID?: string; params?: { sessionID?: string } }
+  return r.type === "session" ? r.sessionID : undefined
 }
 
 export default Plugin.define({
@@ -285,15 +284,22 @@ export default Plugin.define({
     }
 
     async function useVariant(row: Row, sessionID?: string): Promise<void> {
-      const q: { sessionID?: string; providerID: string; modelID: string } = {
-        providerID: OPENCODE_PROVIDER[row.provider],
-        modelID: row.model,
+      if (!sessionID) {
+        // The TUI keeps the new-session model in its own selection store, which
+        // plugins only see read-only (`ui.model`); the server-side global
+        // default is invisible to the TUI chain. Point at /models instead of
+        // promising a switch that cannot land from here.
+        context.ui.toast.show({
+          title: "Tariff",
+          message: `${NAMES[row.provider]}/${row.model} — выбор применяется внутри сессии; для новых сессий используйте /models`,
+          variant: "warning",
+        })
+        return
       }
-      if (sessionID) q.sessionID = sessionID
-      await rpc.use(q)
+      await rpc.use({ sessionID, providerID: OPENCODE_PROVIDER[row.provider], modelID: row.model })
       context.ui.toast.show({
         title: "Tariff",
-        message: `${NAMES[row.provider]}/${row.model} ${money(row.blend, row.est)}/1M${sessionID ? " · сессия" : " · глобально"}`,
+        message: `${NAMES[row.provider]}/${row.model} ${money(row.blend, row.est)}/1M · сессия`,
         variant: "success",
       })
       await refresh()
@@ -339,7 +345,10 @@ export default Plugin.define({
         }
       })
 
-      const byValue = new Map(options.map((o) => [o.value, o]))
+      // Selection and the pin action resolve a value back to its catalog row.
+      // Map the row itself, not the option object: only the row carries the
+      // provider/model fields these handlers read.
+      const byValue = new Map(pool.map((row) => [`${row.provider}/${row.model}`, row]))
       // dialog.select() opens through Dialog.replace, which resets the stack
       // size to "medium" (60 columns); set() before the call is discarded, so
       // re-apply the presentation options once the dialog has replaced.
@@ -412,7 +421,7 @@ export default Plugin.define({
         await refresh()
         return
       }
-      await useVariant(chosen, lastSessionOf(context))
+      await useVariant(chosen, currentSessionOf(context))
     }
 
     return () => {
