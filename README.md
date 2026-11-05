@@ -21,6 +21,15 @@ cheapest provider of the same model family right before each prompt.
   - footer actions: `a` auto-switch on/off, `t` list type (`cheap` / all), `p` pin provider.
 - Auto-switch: right before each prompt the session moves to the cheapest configured provider of the
   **same model family** (never changes the model itself). Pinned providers are skipped.
+- Footer headline: the session's own `<provider>/<model>`, followed by an arrow when something cheaper
+  is available. The arrow prefers `→ <provider> −N%` (same model, another provider); when the model is
+  not cheaper anywhere else it names the cheapest other model of the same group
+  (`→ Go/mimo-v2.6-flash −67% · +4.5 пп`), where the last number is the quality delta against the
+  current model. Providers outside the three subscriptions keep their raw id (`mtplx/...`), and models
+  outside the catalog show the meters without a provider label.
+- Quality next to price: every catalog row carries its **Terminal-Bench 4.0** score in the dialog
+  (`отн. −35% · TB 19.7%`) and in the row detail line. One benchmark and one harness for all models,
+  so the numbers are comparable; a model the benchmark did not run shows `TB —`.
 - Usage meters in the dialog title, the footer and a `sidebar.content` block:
   - OpenCode Go 5h / weekly / monthly allowance (from OpenCode's own `usage.limits`),
   - Ollama Cloud remaining plan credits (`GET https://ollama.com/api/balance`),
@@ -82,6 +91,17 @@ The comparison metric is a blended price per 1M tokens with a fixed agentic mix
 used only to render the row bars; OpenCode enforces the limits server-side.
 
 Prices are a snapshot — update the tables when providers change them.
+
+## Quality scores
+
+`SCORES` and `BENCHMARK` in `catalog.ts` hold the **Terminal-Bench 4.0** snapshot
+(<https://www.vals.ai/benchmarks/terminal-bench-4>, read **2026-11-05**, avg@3 on one `mini-swe-agent`
+harness). One benchmark for every model keeps the numbers comparable; models the benchmark did not
+run stay unscored (`TB —`) instead of getting a guess. The score is never used for ordering rows or
+for auto-switch — only for the dialog row and the quality delta in the footer recommendation.
+
+`TIERS` in `catalog.ts` groups models into `cheap` / `top` by hand. The footer recommends another
+model only from the same group, and only after the same model has no cheaper provider.
 
 ## Usage meters
 

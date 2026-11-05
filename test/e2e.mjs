@@ -270,6 +270,48 @@ async function s4_unit() {
   check("S4: zai rows never discounted", rows.filter((r) => r.provider === "zai").every((r) => !r.discounted))
   check("S4: peak row not discounted", dsPeak.discounted === false && dsPeak.offPeak === false)
   check("S4: isProviderAvailable exact/prefix", cat.isProviderAvailable("ollama-cloud", ["opencode", "ollama-cloud", "mtplx"]) && !cat.isProviderAvailable("opencode-go", ["opencode", "ollama-cloud"]))
+  // Footer headline: the session's own provider/model comes first, a cheaper
+  // alternative of the same family may only follow the arrow. Thu 08:25 UTC is
+  // Go peak and Ollama off-peak, so ollama is half the price of go.
+  const thuRows = cat.rowsFor(new Date("2026-11-05T08:25:00Z"), 0.0004)
+  const thu = new Set(["go", "ollama"])
+  const all = new Set(["go", "ollama", "zai"])
+  const full = cat.headlineOf({ modelID: "deepseek-v4.1-flash", providerID: "opencode-go" }, thuRows, thu, { title: "full", auto: false, note: "" })
+  check("S4: headline starts with the current provider/model", full.startsWith("TARIFF Go/deepseek-v4.1-flash"), full)
+  check("S4: headline suggests the cheaper provider after the arrow", /→ Ollama −5\d%/.test(full), full)
+  check("S4: headline keeps the auto flag", full.endsWith("· auto выкл"), full)
+  // The same model on another provider wins over a cheaper model of the group.
+  check("S4: provider switch outranks a group alternative", !full.includes("mimo"), full)
+  const short = cat.headlineOf({ modelID: "deepseek-v4.1-flash", providerID: "opencode-go" }, thuRows, thu, { title: "short", auto: true, note: "" })
+  check("S4: short headline is provider/model + arrow only", short.startsWith("TARIFF Go/deepseek-v4.1-flash → Ollama") && !short.includes("auto"), short)
+  // Groups and benchmark snapshot.
+  check("S4: tier mapping", cat.tierOf("deepseek-v4.1-flash") === "cheap" && cat.tierOf("kimi-k3") === "top" && cat.tierOf("nope") === undefined)
+  check("S4: score mapping", cat.scoreOf("glm-5.3") === 38.89 && cat.scoreOf("qwen3.8-flash") === undefined)
+  check("S4: benchmark source recorded", cat.BENCHMARK.source.includes("terminal-bench-4") && cat.BENCHMARK.read === "2026-11-05", cat.BENCHMARK)
+  // Another model of the same group is suggested when the current model is not
+  // cheaper anywhere else; its quality delta is always shown when scores exist.
+  const groupAlt = cat.headlineOf({ modelID: "minimax-m3.1-flash", providerID: "opencode-go" }, thuRows, thu, { title: "full", auto: false, note: "" })
+  check("S4: group alternative is named with its model", /→ Go\/mimo-v2\.6-flash −4\d%/.test(groupAlt), groupAlt)
+  check("S4: group alternative carries the quality delta", /· −1\.0 пп/.test(groupAlt), groupAlt)
+  const noBest = cat.compareFor({ modelID: "minimax-m3.1-flash", providerID: "opencode-go" }, thuRows, thu)
+  check("S4: equal provider price is not a switch", noBest.best === undefined && noBest.alt?.model === "mimo-v2.6-flash", noBest)
+  check("S4: group alternative stays inside the group", cat.tierOf(noBest.alt.model) === "cheap", noBest.alt?.model)
+  // A stronger, cheaper model of the group reads as a positive delta.
+  const better = cat.headlineOf({ modelID: "minimax-m3", providerID: "opencode-go" }, thuRows, all, { title: "full", auto: false, note: "" })
+  check("S4: stronger group alternative shows +N пп", /→ Z\.ai\/glm-5\.3 −\d+% · \+37\.9 пп/.test(better), better)
+  // Only the alternative has a score: show the score itself, without a delta.
+  const oneScore = cat.headlineOf({ modelID: "qwen3.8-flash", providerID: "opencode-go" }, thuRows, thu, { title: "full", auto: false, note: "" })
+  check("S4: unscored current model shows the alternative score", /→ Go\/mimo-v2\.6-flash −3\d% · TB 24\.2%/.test(oneScore), oneScore)
+  // Already the cheapest in the group: no arrow at all.
+  const cheapest = cat.headlineOf({ modelID: "mimo-v2.6-flash", providerID: "opencode-go" }, thuRows, thu, { title: "full", auto: false, note: "" })
+  check("S4: cheapest model in the group gets no recommendation", cheapest === "TARIFF Go/mimo-v2.6-flash · auto выкл", cheapest)
+  // A cheaper provider without auth must not appear.
+  const noZai = cat.compareFor({ modelID: "glm-5.3-flash", providerID: "opencode-go" }, thuRows, new Set(["go"]))
+  check("S4: unconfigured provider is not a switch", noZai.best === undefined, noZai.best)
+  const foreign = cat.headlineOf({ modelID: "deepseek-v4.1-flash", providerID: "opencode" }, thuRows, thu, { title: "full", auto: false, note: "" })
+  check("S4: provider outside the three keeps its raw id", foreign.startsWith("TARIFF opencode/deepseek-v4.1-flash → "), foreign)
+  const unknown = cat.headlineOf({ modelID: "mtplx-qwen38-27b", providerID: "mtplx" }, thuRows, thu, { title: "full", auto: false, note: "5ч 68%" })
+  check("S4: uncatalogued model shows the meters only", unknown === "5ч 68%", unknown)
 }
 
 // S5: unit — usage meter helpers.
@@ -319,6 +361,10 @@ function s6_usage_live_absent() {
   check("S6: dialog opened", title.length > 0, title)
   check("S6: no usage in title without sign-in", !/5ч|нед|мес/.test(title), title)
   check("S6: no usage in footer without sign-in", !/· 5ч|· нед|· мес/.test(footer), footer)
+  // Regression: the arrow must always follow the session's own provider/model,
+  // never stand alone as if it were the current model.
+  check("S6: footer arrow follows the current model", !footer.includes("→") || /TARIFF [^\s]+\/[^\s]+ → /.test(footer), footer)
+  check("S6: dialog rows carry the benchmark score", /TB (?:[0-9]+\.[0-9]%|—)/.test(buf.join(" ")), buf.find((l) => l.includes("отн.")))
   execScript("tmux send-keys -t T Escape; true", 15000)
 }
 

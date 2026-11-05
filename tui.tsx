@@ -11,7 +11,7 @@
 import { Plugin, usePlugin } from "@opencode/plugin/tui"
 import { For, Show, createSignal } from "solid-js"
 import { Tariff } from "./rpc"
-import { DEFAULTS, GO_MONTHLY_LIMIT, NAMES, OPENCODE_PROVIDER, familyOf, ofProvider, type ProviderID, type Row, type Settings } from "./catalog"
+import { BENCHMARK, DEFAULTS, GO_MONTHLY_LIMIT, NAMES, OPENCODE_PROVIDER, familyOf, headlineOf, ofProvider, pctOf, scoreOf, type ProviderID, type Row, type Settings } from "./catalog"
 import { budgetLine, bar, costBar, costText, ollamaRows, rowCostPercent, rows as usageRows, titleMeters, worstMeter, type OllamaBalance, type UsageInfo } from "./usage"
 
 const CHEAP_MAX = 0.25
@@ -41,10 +41,6 @@ const hex = (c: unknown): string | undefined => {
 
 const money = (v: number, est: boolean) => `${est ? "~" : ""}$${v.toFixed(3)}`
 const pad = (s: string, n: number): string => (s.length >= n ? s : s + " ".repeat(n - s.length))
-const pctOf = (value: number, mine: number): string => {
-  const d = Math.round(((value - mine) / mine) * 100)
-  return d === 0 ? "0%" : `${d > 0 ? "+" : "−"}${Math.abs(d)}%`
-}
 const cycle = <T extends string>(v: T, all: T[], dir = 1): T => all[(all.indexOf(v) + dir + all.length) % all.length]
 
 // Current session fallback: the most recently updated root session.
@@ -243,24 +239,13 @@ export default Plugin.define({
       return { modelID: o.modelID ?? o.id ?? "", providerID: o.providerID ?? "" }
     }
 
-    const bestFor = (current: { modelID: string; providerID: string } | undefined) => {
-      const provider = ofProvider(current?.providerID ?? "")
-      const family = familyOf(current?.modelID ?? "")
-      const set = providers()
-      const mine = rows().find((r) => r.model === family && r.provider === provider)
-      // Only configured providers may be suggested: without a Go/Z.AI sign-in a
-      // "cheaper" row must not appear in the footer or the dialog headline.
-      const best = rows()
-        .filter((r) => r.model === family && r.provider !== mine?.provider && set.has(r.provider))
-        .sort((a, b) => a.blend - b.blend)[0]
-      return { mine, best, family }
-    }
-
+    // The headline names the session's own model first; whatever is cheaper — another
+    // provider of the same model or another model of the group — only follows the
+    // arrow, so it can never be read as the current one.
     const headline = (): string => {
       void version()
       const s = settings()
       if (s.title === "off") return ""
-      const { best, family } = bestFor(currentModelOf())
       const worst = worstMeter(usage()?.go)
       const ol = ollamaRows(ollama())[0]
       const usageNote = worst
@@ -268,12 +253,7 @@ export default Plugin.define({
         : ol
           ? `${ol.label} ${ol.bar.slice(0, 5)} ${ol.percent}%`
           : ""
-      // Models outside the price catalog still show the subscription meters,
-      // just without a provider recommendation.
-      if (!family) return usageNote
-      const head = `TARIFF${best ? ` ${NAMES[best.provider]}/${best.model}` : ""}`
-      if (s.title === "short") return head
-      return `${head} · auto ${s.auto ? "вкл" : "выкл"}${usageNote ? " · " + usageNote : ""}`
+      return headlineOf(currentModelOf(), rows(), providers(), { title: s.title, auto: s.auto, note: usageNote })
     }
 
     context.ui.slot({ append: "home.footer.status", render: () => <text> {headline()} </text> })
@@ -342,19 +322,20 @@ export default Plugin.define({
         const delta = refBlend !== undefined ? pctOf(row.blend, refBlend) : "—"
         const marker = mineCur ? " " : set.has(row.provider) ? " " : "×"
         const pct = pctOfRow(row)
+        const score = scoreOf(row.model)
         return {
           // ↓ marks rows whose shown price is the discounted off-peak one right
           // now; it lives in the title so it survives description clipping.
           title: `${marker} ${pad(row.model, 19)} ${row.discounted ? "↓" : " "}${pad(money(row.blend, row.est), 9)}/1M`,
           value,
           category: set.has(row.provider) ? NAMES[row.provider] : `${NAMES[row.provider]} (нет auth)`,
-          description: `отн. ${delta}${row.discounted ? " · off-peak" : ""}`.trim(),
+          description: `отн. ${delta}${row.discounted ? " · off-peak" : ""} · ${BENCHMARK.short} ${score === undefined ? "—" : `${score.toFixed(1)}%`}`,
           searchText: `${row.model} ${NAMES[row.provider]} ${delta}${row.discounted ? " off-peak" : ""}`,
           footer: `${costBar(pct, maxPct)} ${costText(pct)}`,
           detail:
             typeof row.est === "boolean" && row.est
-              ? `кредиты/1M: input ${row.input.toFixed(0)} · cached ${row.cached.toFixed(0)} · output ${row.output.toFixed(0)} · курс ${settings().usdPerCredit} $/кредит${set.has(row.provider) ? "" : " · нет auth"}`
-              : `${delta === "—" ? "" : `относительная стоимость: ${delta} · `}input $${row.input} · cached $${row.cached} · output $${row.output} за 1M${set.has(row.provider) ? "" : " · нет auth"}`,
+              ? `кредиты/1M: input ${row.input.toFixed(0)} · cached ${row.cached.toFixed(0)} · output ${row.output.toFixed(0)} · курс ${settings().usdPerCredit} $/кредит${set.has(row.provider) ? "" : " · нет auth"}${score === undefined ? "" : ` · ${BENCHMARK.name} ${score.toFixed(1)}%`}`
+              : `${delta === "—" ? "" : `относительная стоимость: ${delta} · `}input $${row.input} · cached $${row.cached} · output $${row.output} за 1M${set.has(row.provider) ? "" : " · нет auth"}${score === undefined ? "" : ` · ${BENCHMARK.name} ${score.toFixed(1)}%`}`,
         }
       })
 
